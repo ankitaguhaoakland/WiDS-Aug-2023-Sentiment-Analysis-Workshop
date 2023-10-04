@@ -1,0 +1,214 @@
+---
+title: "WiDS : Sentiment Analysis Workshop Part 2"
+author: "Ankita Guha"
+date: "8/20/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options("yaml.eval.expr" = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. 
+
+
+```{r}
+# Libraries 
+library(tm)
+library(quanteda)
+library(NLP)
+library("SnowballC")
+library("wordcloud")
+library("RColorBrewer")
+library("ggplot2")
+```
+
+
+## Reading the Data File & Processing it for further analysis
+```{r}
+# Setting the working directory
+setwd("~/Sentiment Analysis Workshop - WiDS")
+AmazonReviews <- read.csv('./data/amazon_reviews.csv')
+
+# Excluding NA
+AmazonReviews <- na.omit(AmazonReviews)
+
+# Corpus
+Reviews <- Corpus(VectorSource(AmazonReviews$reviewText))
+
+# Text Post Processing : Conversion to lower Case
+Reviews <- tm_map(Reviews, content_transformer(tolower))
+
+# Removing Punctuation
+Reviews <- tm_map(Reviews, removePunctuation)
+
+# Remove Stop Words
+Reviews <- tm_map(Reviews, removeWords, stopwords("en"))
+
+# Remove Numbers
+Reviews <- tm_map(Reviews, removeNumbers)
+
+# Remove context specific words
+Reviews <- tm_map(Reviews, removeWords,c("amazon", "amazons"))
+
+# Remove Stem Document
+Reviews <- tm_map(Reviews, stemDocument)
+
+# Replace "/", "@" and "|" with space
+# toSpace <- content_transformer(function (x , pattern ) gsub(pattern, " ", x))
+# Reviews <- tm_map(Reviews, toSpace, "/")
+# Reviews <- tm_map(Reviews, toSpace, "@")
+# Reviews <- tm_map(Reviews, toSpace, "\\|")
+
+# Eliminate extra white space
+Reviews <- tm_map(Reviews, stripWhitespace)
+
+# Term Document Matrix
+Reviews_TDM <- TermDocumentMatrix(Reviews)
+Reviews_TDM <- as.matrix(Reviews_TDM)
+
+Reviews_TDM_V <- sort(rowSums(Reviews_TDM), decreasing = TRUE)
+
+TDM <- data.frame(word=names(Reviews_TDM_V), freq=Reviews_TDM_V)
+```
+
+## Print the dimension of the Matrix
+Note the number of rows and columns in this Matrix for our further analysis.There are 7260 terms in 4915 documents.It helps in understanding the words and their frequencies. 
+
+```{r}
+dim(Reviews_TDM)
+
+dim(TDM)
+
+#dim(Reviews_DTM)
+```
+
+Checking Sparsity in the Term Document Matrix. Sparsity refers to the threshold of relative frequency for a term above which that term will be removed. In this case the Sparsity is ideal for further processing. The Non-Sparse entries are 7518/7518 which means 7518 have non-zero values out of 7518 cells. 
+
+*Note*: In real life data this will not happen and you will have to remove the Sparse terms so that most of the terms that are 0s are removed from further analysis.
+```{r}
+frequencies = TermDocumentMatrix(TDM)
+frequencies
+```
+
+
+Play around with the value of Sparse and check how the TDM will behave. Sparse = 0.99 will remove terms that are more sparse, retaining most of the terms within the document.
+
+```{r}
+#removeSparseTerms(<yourTDMorDTM>, sparse = 0.01)
+```
+
+
+## Dimension Reduction Using Hierarchical Clustering
+
+### Euclidean Distance with Complete Clustering Criteria
+The Dissimilarity within the Corpus is calculated using the Euclidean Method. Next the Hierarchical Clustering is performed using either of the agglomeration method such as (complete, average, single, Ward.D). 
+```{r}
+#sample(Reviews_TDM, 500)
+hc <- hclust(d = dist((TDM), method = "euclidean"), method = "complete")
+
+hcd = as.dendrogram(hc)
+plot(hcd)
+#plot(hcd, cex = 5, hang = -2) # Change it to 1 and see the difference in the cut on the tree
+```
+
+
+
+## Zooming in on Dendrograms
+As, we can see that the Dendrograms with all the words in both the columns are bit clumsy. Depending on the height of the tree, as we can see that the maximum height of the tree is at least less than 100, so it would be good idea to cut the trees from the Upper and the Lower branch depending on the levels till where we can see and understand the words so used together and visualize a level of correlation between them.
+
+```{r}
+#Plotting Dendrograms with some Cuts
+op = par(mfrow = c(2, 1))   #decides the rows at which the visuals will be shown
+plot(cut(hcd, h = 30)$upper, main = "Upper tree of cut at h=30")
+#plot(cut(hcd, h = 40)$lower[[2]][1], main = "Second branch of lower tree with cut at h=30")
+plot(cut(hcd, h = 30)$lower[[30]], main = "Second branch of lower tree with cut at h=30")
+```
+
+
+## Zooming to the 1st Dendogram
+
+Thus, after cutting some of the branches of the trees, it gets more clear on the level of the nodes at the leaf where some of the words can be seen are used together.
+
+```{r}
+# Zoom in to the first dendogram
+nodePar <- list(lab.cex = 0.6, pch = c(NA, 19), 
+                cex = 0.7, col = "blue")
+
+plot(hcd, xlim = c(1, 40), ylim = c(1, 500), ylab = "Height", nodePar = nodePar, 
+     edgePar = list(col = 2:3, lwd = 2:1))
+```
+
+### Euclidean Distance with Ward
+
+```{r}
+# hc2 <- hclust(d = dist(scale(TDM), method = "euclidean"), method = "ward.D") #Replace method with "single", "average", "ward.D", "ward.D2", "mcquitty", "median", "centroid" to see the change in the Dendrogarm appearence along with change in the heights of the tree
+# # Plot a dendrogram
+# hcd1 = as.dendrogram(hc2)
+# plot(hcd1)
+```
+
+### Agglomerative Hierarchical Clustering
+Agglomerative HC can be performed with **hclust**. First compute the dissimilarity values with dist and then feed these values into **hclust** and specify the agglomeration method to be used (i.e. “complete”, “average”, “single”, “ward.D”). We can then plot the dendrogram. 
+
+The agglomerative coefficient, measures the amount of clustering structure found (values closer to 1 suggest strong clustering structure).
+```{r}
+# library(tidyverse)  # data manipulation
+# library(cluster)    # clustering algorithms
+# library(factoextra) # clustering visualization
+# library(dendextend) # for comparing two dendrograms
+# library(hclust1d)
+#res.agnes <- agnes(TDM, metric = "euclidean", stand = TRUE, method = "complete")
+
+# Agglomerative coefficient
+#res.agnes$ac
+```
+
+## Plot the Dendrogram
+```{r}
+# Plot the tree using pltree()
+# plot(as.hclust(res.agnes))
+```
+
+### Divisive Hierarchical Clustering
+Divisive HC can be performed with the function **diana**. It works in the same way as AGNES but there is no method to provide. 
+```{r}
+#res.diana <- diana(TDM, metric = "euclidean", stand = FALSE)
+# 
+# # Divise coefficient
+#res.diana$dc
+# 
+# Plot the tree using pltree()
+# pltree(res.diana, cex = 0.6, hang = -1,
+#      main = "Dendrogram of diana")
+```
+
+
+## Emotion Analysis with Library Syuzhet
+There are other sentiment libraries such as **syuzhet** with four sentiment dictionaries. It has been developed by the NLP groups at Stanford. 
+
+The only difference is instead of just 3 levels of sentiments such as positive, negative and neutral this library also explores classification of emotions on 8 different levels such as trust, surprise, sadness, joy, fear, disgust, anticipation and anger along with two sentiment levels such as positive and negative. It implements the NRC emotion lexicon, **get_nrc_sentiment**. 
+
+To read and explore more you can follow the library package here:
+https://cran.r-project.org/web/packages/syuzhet/vignettes/syuzhet-vignette.html
+
+```{r}
+library(syuzhet)
+
+# Convert to a DTM
+#Reviews_DTM <- DocumentTermMatrix(Reviews)
+
+# Terms occurring at least 500 times within the Corpus. Decreasing the number of iteration will increase the number of words within the whole corpus and vice versa
+#findFreqTerms(Reviews_DTM, 500)
+
+# Find associations of words that occur at least 600 times with a Correlation of equal to or greater than 0.25
+#findAssocs(Reviews_DTM, terms = findFreqTerms(Reviews_DTM, 600), corlimit = 0.25)
+```
+
+Convert the DTM into a Vector to proceed to the next steps to extract all the different levels of emotional & sentiment lexicons. 
+

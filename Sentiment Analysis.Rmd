@@ -1,0 +1,514 @@
+---
+title: "WiDS : Sentiment Analysis Workshop Part 1"
+author: "Ankita Guha"
+date: "8/12/2023"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Installing Libraries
+```{r}
+#Installing Libraries
+library(plyr)
+library(tidytext)
+library(janeaustenr)
+library(stringr)
+#library(rJava)
+#library(qdap)
+library(dplyr)
+library(tm)
+library(NLP)
+library(wordcloud)
+library(plotrix)
+#library(dendextend)
+library(ggplot2)
+#library(ggthemes)
+#library(RWeka)
+library(reshape2)
+library(quanteda)
+library(latexpdf)
+```
+
+
+## Reading the Data File
+```{r}
+setwd("~/Sentiment Analysis Workshop - WiDS")
+AmazonReviews <- read.csv('./data/amazon_reviews.csv')
+```
+
+## Removing any missing values that might be present in the dataframe
+```{r}
+AmazonReviews <- na.omit(AmazonReviews)
+```
+
+
+## Sneakpeak of the Data
+```{r}
+head(AmazonReviews)
+```
+
+## Columns within the Dataset
+```{r}
+names(AmazonReviews)
+```
+
+## Corpus
+
+After loading the data set, we can load the text data as a Corpus. This helps in facilitating the next process of data cleaning and further processing for analysis. 
+```{r}
+Reviews <- Corpus(VectorSource(AmazonReviews$reviewText))
+```
+
+## Text Preprocessing
+
+### i) Conversion to Lower Case
+```{r}
+Reviews <- tm_map(Reviews, tolower)
+```
+### ii) Remove Punctuation
+```{r}
+Reviews <- tm_map(Reviews, removePunctuation)
+```
+### iii) Remove Stopwords & Remove Numbers
+```{r}
+# List of Standard English Stopwords
+#stopwords("en")
+```
+```{r}
+# Remove Stopwords
+Reviews <- tm_map(Reviews, removeWords, stopwords("en"))
+```
+```{r}
+# Remove Numbers
+Reviews <- tm_map(Reviews, removeNumbers)
+```
+
+### iv) Remove Context Specific Stop Words
+```{r}
+Reviews <- tm_map(Reviews, removeWords,c("amazon", "amazons"))
+```
+
+### v) Stemming Words
+By this process of stemming, the derived words are essentially reduced to their root words.
+```{r}
+Reviews <- tm_map(Reviews, stemDocument)
+```
+
+Okay, now that we have accomplished some levels of data cleaning. Let’s try to see some of the data in our Corpus now.
+```{r}
+Reviews[[8]][1]
+Reviews[[2]][1]
+Reviews[[7]][1]
+Reviews[[3]][1]
+Reviews[[6]][1]
+Reviews[[5]][1]
+```
+## Exploratory Text Analysis
+Let’s next identify the most frequently used words in overall Customers Reviews.
+
+## Create DTM & TDM from Corpus
+This decides the Document Term Matrix that can help to identify the frequency of terms occurring in the corpuses. In a DTM, Rows correspond to Documents and Columns corresponds to Terms. In a TDM the rows of the matrix represents the sentences from the data & the columns of the Matrix represents the words. The TDM is a transpose of DTM.
+```{r}
+Reviews_DTM <- DocumentTermMatrix(Reviews)
+Reviews_TDM <- TermDocumentMatrix(Reviews)
+```
+
+Let’s use the TDM to identify the frequent terms, by converting them to matrix
+
+```{r}
+# Convert TDM to Matrix
+Reviews_TDM <- as.matrix(Reviews_TDM)
+
+# Sum Rows and Frequency Data Frame
+Reviews_Term_Freq <- rowSums(Reviews_TDM)
+
+# Sort term_frequency in descending order
+Reviews_Term_Freq <- sort(Reviews_Term_Freq, decreasing = T)
+
+# View the top 10 most common words
+Reviews_Term_Freq[1:20]
+```
+
+
+
+## Visualization
+```{r}
+# Plot a barchart of the 10 most common words
+barplot(Reviews_Term_Freq[1:10], col = "steel blue", las = 2)
+```
+
+## Word Clouds
+
+### Top 100
+```{r}
+Reviews_Term_Freq <- data.frame(term = names(Reviews_Term_Freq), num = Reviews_Term_Freq)
+# Create a wordcloud for the values in word_freqs
+wordcloud(Reviews_Term_Freq$term, Reviews_Term_Freq$num, max.words = 100, colors = "darkorchid")
+```
+
+### Top 50
+```{r}
+# Print the word cloud with the specified colors
+wordcloud(Reviews_Term_Freq$term, Reviews_Term_Freq$num,
+  max.words = 50, colors = c("darkcyan","pink3","red", "darkblue"))
+```
+
+## Bi-Grams
+
+### Top 10 Bi Grams for the Review
+
+```{r}
+# Removing NA values from the data frame
+AmazonReviews <- na.omit(AmazonReviews)
+
+review_bigram <- tokens(AmazonReviews$reviewText) %>%
+    tokens_remove("\\p{P}", valuetype = "regex", padding = TRUE) %>% #removes punctuation 
+    tokens_remove(stopwords("english"), padding  = TRUE) %>%
+    tokens_ngrams(n = 2) %>%
+    dfm()
+topfeatures(review_bigram)
+```
+
+## Tri-Grams
+
+### Top 10 Bi Grams for the Review
+Note that **galaxy_note_2** and **galaxy_note_ii** is in 2 different format.
+```{r}
+review_trigram <- tokens(AmazonReviews$reviewText) %>%
+    tokens_remove("[\\p{P}\\p{S}]", valuetype = "regex", padding = TRUE) %>% #removes punctuation & symbols
+    tokens_remove(stopwords("english"), padding  = TRUE) %>%
+    tokens_ngrams(n = 3) %>%
+    dfm()
+topfeatures(review_trigram)
+```
+
+## Four-Grams
+ 
+```{r}
+review_4gram <- tokens(AmazonReviews$reviewText) %>%
+    tokens_remove("[\\p{P}\\p{S}]", valuetype = "regex", padding = TRUE) %>% #removes punctuation & symbols
+    tokens_remove(stopwords("english"), padding  = TRUE) %>%
+    tokens_ngrams(n = 4) %>%
+    dfm()
+topfeatures(review_4gram)
+```
+
+
+***Note***: 
+1. These word grams are created using the actual data frame and not from the Corpus. 
+2. If you would like to see more levels of granularity keep on increasing the word grams to see how various words are appearing within the data set. 
+
+
+
+
+## Dimension Reduction using Hierarchial Clustering
+By Words Clustering, we can visualize which words/group of words are used together based on their frequency distance.
+```{r}
+library(cluster)
+library(factoextra)
+```
+
+## Feature Frequency for Bi-Gram 
+
+```{r}
+library(quanteda.textstats)
+```
+
+```{r}
+rb1 <- textstat_frequency(review_bigram, n = 50)
+
+# Sort by reverse frequency order
+rb1$feature <- with(rb1, reorder(feature, -frequency))
+
+ggplot(rb1, aes(x = feature, y = frequency), colour = frequency) +
+    geom_point() + theme_gray() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+```{r}
+# Lolypop Chart
+library(ggpubr)
+```
+
+### Top 20 Bi-Grams
+```{r}
+# Picking top 20 features and ranking their frequency
+rb1 <- rb1[c(1:20),c(1:4)]
+```
+
+
+```{r}
+ggdotchart(rb1, x = "feature", y = "frequency",
+           #color = "rank",                              # Color by groups
+           color = c("#D55E00"),                         # Custom color palette   
+           sorting = "descending",                       # Sort value in descending order
+           add = "segments",                             # Add segments from y = 0 to dots
+           rotate = TRUE,                                # Rotate vertically
+           #group = "rank",                              # Order by groups
+           dot.size = 8,                                 # Large dot size
+           label = (rb1$frequency),                      # Add values as dot labels
+           font.label = list(color = "white", size = 9, 
+                             vjust = 0.5),               # Adjust label parameters
+           ggtheme = theme_pubr()                        # ggplot2 theme
+           )
+```
+
+## Feature Frequency for Tri-Gram
+
+```{r}
+rt1 <- textstat_frequency(review_trigram, n = 50)
+
+# Sort by reverse frequency order
+rt1$feature <- with(rt1, reorder(feature, -frequency))
+
+ggplot(rt1, aes(x = feature, y = frequency), colour = frequency) +
+    geom_point() + theme_gray() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+### Top 20 Tri-Grams 
+```{r}
+#rt1 <- rt1[c(14,22,26:27,33,37,40,49,52,56,60,76,74,102,112,126,142),c(1:5)]
+rt1 <- rt1[c(1:20),c(1:5)]
+```
+
+### Tri-Gram Visualization of Top Frequency Words
+
+```{r}
+ggdotchart(rt1, x = "feature", y = "frequency",
+           #color = "rank",                              # Color by groups
+           color = c("#CC79A7"),                         # Custom color palette   
+           sorting = "descending",                       # Sort value in descending order
+           add = "segments",                             # Add segments from y = 0 to dots
+           rotate = TRUE,                                # Rotate vertically
+           #group = "rank",                              # Order by groups
+           dot.size = 9,                                 # Large dot size
+           label = (rt1$frequency),                      # Add values as dot labels
+           font.label = list(color = "white", size = 9, 
+                             vjust = 0.5),               # Adjust label parameters
+           ggtheme = theme_pubr()                        # ggplot2 theme
+           )
+```
+
+
+Let's find words which occurs frequently within the corpus. In this case we have one corpus, so let's check the range of low and high frequency words could vary depending on the occurrences of these words within the corpus. 
+```{r}
+library(NLP)
+library(tm)
+
+
+# Terms occurring within the range of 100 to 200
+#findFreqTerms(Reviews_DTM, lowfreq = 100, highfreq = 200)
+
+# Terms occurring at least 500 times within the Corpus. Decreasing the number of iteration will increase the number of words within the whole corpus and vice versa
+findFreqTerms(Reviews_DTM, 500)
+```
+
+### Words Association : Correlation
+
+For any given word, the function **findAssocs()** calculates its correlation with every other word in DTM. This function will return a list of all other terms that meets or exceed the minimum threshold. Scores range from 0 to 1. A score of 1 means that two words always appear together in documents, while a score approaching 0 means the terms seldom appear in the same document. Try to increase or decrease the range and see how the words associations varies. 
+
+```{r}
+#You can also use specific words to check the variability and associations of those words from the Corpus
+#findAssocs(Reviews_DTM, c("samsung", "card", "phone", "tablet"), corlimit = 0.2)
+
+# Find associations of words that occur at least 600 times with a Correlation of equal to or greater than 0.25
+findAssocs(Reviews_DTM, terms = findFreqTerms(Reviews_DTM, 600), corlimit = 0.25)
+```
+
+
+## Sentiment Analysis : Corpus as Vector Source
+
+```{r}
+library(SentimentAnalysis)
+```
+
+## Dataframe Preprocessing
+
+```{r}
+#any(is.na(Reviews))
+
+# Create a Vector Source
+ReviewsCorpus <- Corpus(VectorSource(as.vector(Reviews)))
+```
+
+## Corpus Preprocessing
+
+```{r}
+# Convert to Lower Case
+ReviewsCorpus = tm_map(ReviewsCorpus, tolower)
+
+# Remove Punctuation
+ReviewsCorpus = tm_map(ReviewsCorpus, removePunctuation)
+
+# Remove Stopwords
+ReviewsCorpus = tm_map(ReviewsCorpus, removeWords, stopwords("english"))
+
+# Stem Document
+ReviewsCorpus = tm_map(ReviewsCorpus, stemDocument)
+```
+
+### Overall Sentiment Co-efficient with various Dictionaries
+
+### QDAP Dictionary
+The QDAP Dictionary has 3 levels of Sentiments classified in 3 directions (positive, negative and neutral). However in this case with all the Reviews in the Corpus we got positive and neutral reviews only. 
+```{r}
+# Sentiment Analysis of Corpus: Reviews
+sentiment <- analyzeSentiment(ReviewsCorpus)
+
+# Obtaining Binary Response from the Corpus
+binaryResponse <- convertToBinaryResponse(sentiment)$SentimentQDAP
+binaryResponse
+
+# Extracting dictionary based sentiment 
+dict <- sentiment$SentimentQDAP
+dict
+
+# View sentiment direction (i.e. positive, neutral and negative)
+responseQDAP <- convertToDirection(sentiment$SentimentQDAP)
+responseQDAP
+```
+
+### Explore QDAP Dictionary Response for Models Performance
+Compare sentiment values to existing Response Variable.
+Evaluate various Dictionaries performance based on changing the response to positive, negative and neutral. 
+```{r}
+#Exploring Response as per Dictionary QDAP
+responseall <- c(+1, 0, -1)
+# Gives all the Stats to Evaluate the Models
+compareToResponse(sentiment, responseall)
+compareToResponse(sentiment, convertToBinaryResponse(responseall))
+```
+
+## Trends visualizing the trend between Sentiment & Response
+```{r}
+plotSentiment(sentiment$SentimentQDAP, responseall,
+                      xlab = "Sentiment", ylab = "Response")
+```
+
+### Plotting overall Sentiment Analysis with QDAP Dictionary 
+
+```{r}
+unique(responseQDAP)
+unique(responseall)
+
+dim(table(responseQDAP))
+#dim(table(responseQDAP))
+
+library(data.table)
+```
+
+### Visualizing the Responses in Vector Corpus from the Data Table
+
+```{r}
+DTQDAP <- data.table(responseQDAP)
+
+
+#Number of Factors for the Reviews
+DTQDAP <- DTQDAP %>% 
+  group_by(responseQDAP) %>%
+  summarise(Reviews = length(responseQDAP))
+
+
+#Visualization
+library("RColorBrewer")
+library(ggplot2)
+theme_set(theme_classic())
+
+
+g <- ggplot(DTQDAP, aes(responseQDAP, Reviews))
+g + geom_bar(stat="identity", width = 0.5, fill="plum") + 
+      labs(title="Bar Chart", 
+           subtitle="Reviews Count") +
+      theme(axis.text.x = element_text(angle=360, vjust=0.6))
+
+
+```
+
+
+**Note**: 
+1. Try out with the other Dictionaries and check out their direction level and responses. 
+
+### LM Dictionary
+```{r}
+sentimentLM <- sentiment$SentimentLM
+```
+
+### GI Dictionary
+```{r}
+sentimentGI <- sentiment$SentimentGI
+```
+
+### HE Dictionary
+```{r}
+sentimentHE <- sentiment$SentimentHE
+```
+
+
+## Sentiment Analysis : Using Corpus Only
+
+```{r}
+library(SentimentAnalysis)
+sentimentC <- analyzeSentiment(Reviews)
+
+# Remove NAs
+sentimentC <- na.omit(sentimentC)
+
+# Dictionary QDAP
+sentimentQDAP_C <- sentimentC$SentimentQDAP
+
+# Dictionary LM
+SentimentLM_C <- sentimentC$SentimentLM
+
+# Dictionary GI
+SentimentGI_C <- sentimentGI <- sentimentC$SentimentGI
+
+# Convert to Direction
+convertToDirection(sentimentC$SentimentQDAP)
+
+#Exploring Response as per Dictionary QDAP
+responseall <- c(-1, 0, +1)
+plotSentimentResponse(sentimentC$SentimentQDAP, responseall)
+plotSentimentResponse(sentimentC$SentimentLM, responseall)
+plotSentimentResponse(sentimentC$SentimentGI, responseall)
+plotSentimentResponse(sentimentC$SentimentHE, responseall)
+
+
+
+responseQDAP_C <- convertToDirection(sentimentC$SentimentQDAP)
+unique(responseQDAP_C)
+
+dim(table(responseQDAP_C))
+
+```
+
+## Visualization of Sentiments with Corpus Only
+```{r}
+DTQDAP <- data.table(responseQDAP_C)
+
+
+#Number of Factors for the Reviews
+DTQDAP <- DTQDAP %>% 
+  group_by(responseQDAP_C) %>%
+  summarise(Reviews = length(responseQDAP_C))
+
+
+#Visualization
+library("RColorBrewer")
+library(ggplot2)
+theme_set(theme_classic())
+
+
+g <- ggplot(DTQDAP, aes(responseQDAP_C, Reviews))
+g + geom_bar(stat="identity", width = 0.5, fill="plum") + 
+      labs(title="Bar Chart", 
+           subtitle="Reviews Count") +
+      theme(axis.text.x = element_text(angle=360, vjust=0.6))
+```
